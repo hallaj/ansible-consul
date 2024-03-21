@@ -76,106 +76,14 @@
     - consul_install_remotely | bool
     - not consul_install_from_repo | bool
 
-- name: Configure gossip encryption key
-  when: consul_encrypt_enable | bool
-  block:
-    - name: Save existing gossip encryption key
-      when:
-        - consul_raw_key is not defined
-        - bootstrap_state.stat.exists | bool
-        - inventory_hostname in consul_servers
-      block:
-        - name: Check for gossip encryption key on previously boostrapped server
-          ansible.builtin.slurp:
-            src: "{{ consul_config_path }}/config.json"
-          register: consul_config_b64
-          ignore_errors: true
-
-        - name: Deserialize existing configuration
-          ansible.builtin.set_fact:
-            consul_config: "{{ consul_config_b64.content | b64decode | from_json }}"
-          when: consul_config_b64.content is defined
-
-        - name: Save gossip encryption key from existing configuration
-          ansible.builtin.set_fact:
-            consul_raw_key: "{{ consul_config.encrypt }}"
-          no_log: true
-          when: consul_config is defined
-
-    - name: Create temporary file for raw gossip encryption key
-      delegate_to: localhost
-      ansible.builtin.tempfile:
-        suffix: .key
-      become: false
-      vars:
-        ansible_become: false
-      run_once: true
-      changed_when: false
-      check_mode: false
-      register: consul_raw_key_file
-
-    # Key provided by extra vars or the above block
-    - name: Write gossip encryption key locally for use with new servers
-      ansible.builtin.copy:
-        content: "{{ consul_raw_key }}"
-        dest: "{{ consul_raw_key_file.path }}"
-        mode: "0600"
-      become: false
-      vars:
-        ansible_become: false
-      delegate_to: localhost
-      run_once: true
-      changed_when: false
-      when: consul_raw_key is defined
-
-    - name: Generate new gossip encryption key if none was found
-      run_once: true
-      when:
-        - consul_raw_key is not defined
-        - not bootstrap_state.stat.exists | bool
-      block:
-        - name: Create temporary file to receive gossip encryption key
-          become: false
-          ansible.builtin.tempfile:
-            state: file
-          register: gossip_key_tempfile
-
-        - name: Generate gossip encryption key # noqa no-changed-when
-          become: false
-          ansible.builtin.shell: PATH={{ consul_bin_path }}:$PATH consul keygen > {{ gossip_key_tempfile.path }}
-          register: consul_keygen
-
-        - name: Fetch key locally to share with other nodes
-          become: false
-          ansible.builtin.fetch:
-            src: "{{ gossip_key_tempfile.path }}"
-            dest: "{{ consul_raw_key_file.path }}"
-            flat: true
-
-      always:
-        - name: Clean up temporary file
-          become: false
-          ansible.builtin.file:
-            path: "{{ gossip_key_tempfile.path }}"
-            state: absent
-          when: gossip_key_tempfile is defined
-
-    - name: Read gossip encryption key for servers that require it
-      ansible.builtin.set_fact:
-        consul_raw_key: "{{ lookup('file', consul_raw_key_file.path) }}"
-      no_log: true
-      when: consul_raw_key is not defined
-
-    - name: Delete gossip encryption key file
-      ansible.builtin.file:
-        path: "{{ consul_raw_key_file.path }}"
-        state: absent
-      become: false
-      vars:
-        ansible_become: false
-      run_once: true
-      delegate_to: localhost
-      changed_when: false
+- name: Include gossip configuration
+  ansible.builtin.include_tasks: ./gossip.yml
+  when:
+    - consul_encrypt_enable | bool
+    - consul_raw_key is not defined
+  with_items: "{{ consul_servers }}"
+  loop_control:
+    loop_var: host_item
 
 - name: Create ACL configuration
   ansible.builtin.include_tasks:
