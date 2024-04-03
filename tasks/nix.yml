@@ -78,12 +78,12 @@
 
 - name: Include gossip configuration
   ansible.builtin.include_tasks: ./gossip.yml
-  when:
-    - consul_encrypt_enable | bool
-    - consul_raw_key is not defined
   with_items: "{{ consul_servers }}"
   loop_control:
     loop_var: host_item
+  when:
+    - consul_encrypt_enable | bool
+    - consul_raw_key is not defined
 
 - name: Create ACL configuration
   ansible.builtin.include_tasks:

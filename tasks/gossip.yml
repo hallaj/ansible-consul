@@ -22,7 +22,7 @@
       when:
         - consul_raw_key is not defined
         - bootstrap_state.stat.exists | bool
-        - inventory_hostname in consul_servers
+        - host_item in consul_servers
 
     - name: Deserialize existing configuration
       delegate_to: "{{ ansible_hostname | lower }}"
